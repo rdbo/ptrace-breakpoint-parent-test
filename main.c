@@ -15,6 +15,7 @@ int main()
 {
 	pid_t pid;
 	int mynumber = 10;
+	int number;
 	
 	printf("Forking...\n");
 	printf("&mynumber: %p\n", &mynumber);
@@ -31,6 +32,11 @@ int main()
 		printf("[parent] Writing to 'mynumber'...\n");
 		mynumber = 20;
 		printf("[parent] 'mynumber' changed to: %d\n", mynumber);
+
+		printf("[parent] Reading from 'mynumber'...\n");
+		number = *(int *)&mynumber;
+		printf("[parent] Read 'mynumber' value into 'number': %d\n", number);
+
 		printf("[parent] Done\n");
 	} else {
 		long result;
@@ -59,7 +65,7 @@ int main()
 		printf("[child] DR7 value: %p\n", (void *)dr7);
 
 		dr0 = (unsigned long)&mynumber; // Set watchpoint address on dr0
-		dr7 = 0xD0003; /* 0b00000000000011010000000000000011 */; // Set length and parameters for dr0 on dr7
+		dr7 = 0xD8003; /* 0b00000000000011011000000000000011 */; // Set length and parameters for dr0 on dr7
 
 		printf("[child] New DR0: %p\n", (void *)dr0);
 		printf("[child] New DR7: %p\n", (void *)dr7);
@@ -74,27 +80,32 @@ int main()
 		if (result)
 			goto _detach;
 
-		printf("[child] Continuing parent process...\n");
-		ptrace(PTRACE_CONT, ppid, NULL, NULL);
-		waitpid(ppid, &status, WUNTRACED | WSTOPPED);
+		for (;;) {
+			printf("[child] Continuing parent process...\n");
+			ptrace(PTRACE_CONT, ppid, NULL, NULL);
+			waitpid(ppid, &status, WUNTRACED | WSTOPPED);
 
-		printf("[child] Parent process stopped with status: %d\n", status);
-		if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP) {
-			printf("[child] Caught write to 'mynumber'!\n");
+			printf("[child] Parent process stopped with status: %d\n", status);
+			if (!WIFSTOPPED(status) || WSTOPSIG(status) != SIGTRAP)
+				break;
+
+			printf("[child] Caught read/write to 'mynumber'!\n");
 			printf("[child] Current value of 'mynumber': %d\n", mynumber);
 		}
 
+		/*
 		printf("[child] Removing breakpoint...\n");
 		dr7 = 0; // No breakpoints
 		result = ptrace(PTRACE_POKEUSER, ppid, offsetof(struct user, u_debugreg[7]), dr7);
 		printf("[child] PTRACE_POKEUSER result: %ld\n", result);
-		
+	
 		printf("[child] Resuming parent process normally...\n");
 		ptrace(PTRACE_CONT, ppid, NULL, NULL);
 
 		printf("[child] Waiting for process to stop...\n");
 		waitpid(ppid, &status, WUNTRACED | WSTOPPED);
 		printf("[child] Process stopped with status: %d\n", status);
+		*/
 
 		_detach:
 		ptrace(PTRACE_DETACH, ppid, NULL, NULL);

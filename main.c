@@ -15,6 +15,7 @@ int main()
 {
 	pid_t pid;
 	int mynumber = 10;
+	int *mynumber_addr = &mynumber;
 	int number;
 	
 	printf("Forking...\n");
@@ -28,6 +29,8 @@ int main()
 		printf("[parent] Waiting...\n");
 
 		sleep(1); // wait for child to attach
+
+		printf("[parent] Initial value for 'mynumber': %d\n", *(int *)&mynumber);
 
 		printf("[parent] Writing to 'mynumber'...\n");
 		mynumber = 20;
@@ -43,9 +46,10 @@ int main()
 		pid_t ppid = getppid();
 		unsigned long dr0, dr7; // Debug registers
 		int status;
+		int target_mynumber;
 
 		printf("[child] Parent process ID: %d\n", ppid);
-		printf("[child] &mynumber: %p\n", &mynumber);
+		printf("[child] &mynumber: %p\n", mynumber_addr);
 
 		/* NOTE: This will fail if '/proc/sys/kernel/yama/ptrace_scope' is set to '1' */
 		result = ptrace(PTRACE_ATTACH, ppid, NULL, NULL);
@@ -64,8 +68,8 @@ int main()
 
 		printf("[child] DR7 value: %p\n", (void *)dr7);
 
-		dr0 = (unsigned long)&mynumber; // Set watchpoint address on dr0
-		dr7 = 0xD8003; /* 0b00000000000011011000000000000011 */; // Set length and parameters for dr0 on dr7
+		dr0 = (unsigned long)mynumber_addr; // Set watchpoint address on dr0
+		dr7 = 0xF0003; /* 0b00000000000011110000000000000011 */; // Set length and parameters for dr0 on dr7
 
 		printf("[child] New DR0: %p\n", (void *)dr0);
 		printf("[child] New DR7: %p\n", (void *)dr7);
@@ -90,7 +94,8 @@ int main()
 				break;
 
 			printf("[child] Caught read/write to 'mynumber'!\n");
-			printf("[child] Current value of 'mynumber': %d\n", mynumber);
+			target_mynumber = ptrace(PTRACE_PEEKDATA, ppid, mynumber_addr, NULL);
+			printf("[child] Current value of 'mynumber': %d\n", target_mynumber);
 		}
 
 		/*
